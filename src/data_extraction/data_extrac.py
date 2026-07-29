@@ -14,6 +14,20 @@ from docx import Document
 from pathlib import Path
 import re
 import unicodedata
+import logging
+
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+    handlers=[
+        logging.FileHandler("preprocessing.log", encoding="utf-8"),
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -61,23 +75,75 @@ class DataCleaner:
 
 
 
-cleaner = DataCleaner()
+# cleaner = DataCleaner()
+
+# cleaned_data = ""
 
 
 
-with os.scandir(r'C:\projects\auto_complete\personalized-hindi-autocomplete\docdata') as files:
-    for entry in files:
-        if entry.is_file() and entry.name.endswith('.docx'):
-            doc = Document(Path(entry.path))
-            
-            for index, paragraph in enumerate(doc.paragraphs):
-                if paragraph.text:
-                    print(f"Paragraph {index}: {paragraph.text}")
-                    print("Cleaned Paragraph:", cleaner.clean_pipeline(paragraph.text))
-                   
-                    # break
-            # for table in doc.tables:
-            #     for row in table.rows:
-            #         row_data = [cell.text for cell in row.cells]
-            #         print("Row Data:", row_data)         
-            break
+class DataExtractor:
+    def __init__(self,dir_path:Path):
+        self.cleaner = DataCleaner()
+        self.dir_path = Path(dir_path)
+
+    def extract_data(self, doc):
+        cleaned_data = ""
+        for paragraph in doc.paragraphs:
+            if paragraph.text:
+                cleaned_data += self.cleaner.clean_pipeline(paragraph.text) + "\n"
+        return cleaned_data
+
+    def extract_table_data(self, doc):
+        cleaned_data = ""
+        for table in doc.tables:
+            for row in table.rows:
+                cleaned_row_data = [self.cleaner.clean_pipeline(cell.text) for cell in row.cells]
+                if len(cleaned_row_data) == 2:  # the second column contains the data we want
+                    cleaned_data += cleaned_row_data[1] + "\n"
+                elif len(cleaned_row_data) ==  4:  
+                    cleaned_data += (cleaned_row_data[3]) + "\n"      
+        return cleaned_data
+
+    def process_files(self):
+        cleaned_data = []
+        for entry in os.scandir(self.dir_path):
+            if entry.is_file() and entry.name.endswith('.docx'):
+                try:
+                    doc = Document(entry.path)
+                    cleaned_paragraph_data = self.extract_data(doc)
+                    cleaned_table_data = self.extract_table_data(doc)
+                    cleaned_data.append(cleaned_paragraph_data)
+                    cleaned_data.append(cleaned_table_data)
+                except Exception as e:
+                    logger.exception(f"Error processing file {entry.name}: {e}")
+
+                logger.info(f"Processed file {entry.name}")
+        return "\n".join(cleaned_data)
+
+# with os.scandir(r'C:\projects\auto_complete\personalized-hindi-autocomplete\docdata') as files:
+#     for entry in files:
+#         if entry.is_file() and entry.name.endswith('.docx'):
+#             doc = Document(Path(entry.path))
+#             doc = Document(r"C:\projects\auto_complete\personalized-hindi-autocomplete\docdata\_कांड संख्_या-336_25.docx")
+#             for index, paragraph in enumerate(doc.paragraphs):
+#                 if paragraph.text:
+#                     # print(f"Paragraph {index}: {paragraph.text}")
+#                     # print("Cleaned Paragraph:", cleaner.clean_pipeline(paragraph.text))
+#                     cleaned_data += cleaner.clean_pipeline(paragraph.text) + "\n"
+                    
+#             for table in doc.tables:
+#                 for row in table.rows:
+#                     cleaned_row_data = [cleaner.clean_pipeline(cell.text) for cell in row.cells]
+#                     cleaned_data += cleaned_row_data[1] + "\n"
+#                     # print("Cleaned Row Data:", cleaned_row_data[1])
+
+
+if __name__ == "__main__":
+    dir_path = Path(r'C:\projects\auto_complete\personalized-hindi-autocomplete\docdata')
+    extractor = DataExtractor(dir_path)
+    cleaned_data = extractor.process_files()
+    print("total cleaned data length:", len(cleaned_data))
+    with open("cleaned_tokenizer_data.txt", "w", encoding="utf-8") as f:
+        f.write(cleaned_data)
+
+
