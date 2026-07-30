@@ -166,7 +166,7 @@ class DataExtractor:
 #     for entry in files:
 #         if entry.is_file() and entry.name.endswith('.docx'):
 #             doc = Document(Path(entry.path))
-#             doc = Document(r"C:\projects\auto_complete\personalized-hindi-autocomplete\docdata\_कांड संख्_या-336_25.docx")
+#             
 #             for index, paragraph in enumerate(doc.paragraphs):
 #                 if paragraph.text:
 #                     # print(f"Paragraph {index}: {paragraph.text}")
