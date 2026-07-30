@@ -87,38 +87,80 @@ class DataExtractor:
         self.dir_path = Path(dir_path)
 
     def extract_data(self, doc):
-        cleaned_data = ""
+        cleaned_data = []
+
+        first_document = True
+
         for paragraph in doc.paragraphs:
-            if paragraph.text:
-                cleaned_data += self.cleaner.clean_pipeline(paragraph.text) + "\n"
-        return cleaned_data
+            if not paragraph.text.strip():
+                continue
+
+            text = self.cleaner.clean_pipeline(paragraph.text)
+
+            if not text:
+                continue
+
+            if re.match(r"^\s*सेवा\s+में\s*,?", text):
+                if not first_document:
+                    cleaned_data.append("<eod>")
+                first_document = False
+
+            cleaned_data.append(text)
+
+        cleaned_data.append("<eod>")
+
+        return "\n".join(cleaned_data)
+
+
 
     def extract_table_data(self, doc):
-        cleaned_data = ""
+        table_text = []
+
         for table in doc.tables:
             for row in table.rows:
-                cleaned_row_data = [self.cleaner.clean_pipeline(cell.text) for cell in row.cells]
-                if len(cleaned_row_data) == 2:  # the second column contains the data we want
-                    cleaned_data += cleaned_row_data[1] + "\n"
-                elif len(cleaned_row_data) ==  4:  
-                    cleaned_data += (cleaned_row_data[3]) + "\n"      
-        return cleaned_data
+                cleaned_row_data = [
+                 self.cleaner.clean_pipeline(cell.text)
+                for cell in row.cells
+                ]
+
+                if len(cleaned_row_data) == 2:
+                    if cleaned_row_data[1]:
+                        table_text.append(cleaned_row_data[1])
+
+                elif len(cleaned_row_data) == 4:
+                    if cleaned_row_data[3]:
+                        table_text.append(cleaned_row_data[3])
+
+        return "\n".join(table_text)
+
+
 
     def process_files(self):
         cleaned_data = []
-        for entry in os.scandir(self.dir_path):
-            if entry.is_file() and entry.name.endswith('.docx'):
-                try:
-                    doc = Document(entry.path)
-                    cleaned_paragraph_data = self.extract_data(doc)
-                    cleaned_table_data = self.extract_table_data(doc)
-                    cleaned_data.append(cleaned_paragraph_data)
-                    cleaned_data.append(cleaned_table_data)
-                except Exception as e:
-                    logger.exception(f"Error processing file {entry.name}: {e}")
 
-                logger.info(f"Processed file {entry.name}")
-        return "\n".join(cleaned_data)
+        for entry in os.scandir(self.dir_path):
+            if not (entry.is_file() and entry.name.endswith(".docx")):
+                continue
+
+            try:
+                doc = Document(entry.path)
+
+                cleaned_paragraph_data = self.extract_data(doc)
+                cleaned_table_data = self.extract_table_data(doc)
+
+                cleaned_data.append(cleaned_paragraph_data)
+
+                if cleaned_table_data:
+                    cleaned_data.append(cleaned_table_data)
+
+                logger.info(
+                f"{entry.name}: extracted  logical documents"
+                )
+
+            except Exception:
+                logger.exception(f"Error processing file {entry.name}")
+
+        return "".join(cleaned_data)
 
 # with os.scandir(r'C:\projects\auto_complete\personalized-hindi-autocomplete\docdata') as files:
 #     for entry in files:
