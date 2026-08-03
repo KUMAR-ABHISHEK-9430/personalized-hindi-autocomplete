@@ -1,5 +1,9 @@
 console.log("Content.js loaded");
 
+let overlayX = 0;
+let overlayY = 0;
+let selectedPrediction = "";
+
 (function () {
 
     const iframe = document.querySelector(".docs-texteventtarget-iframe");
@@ -13,43 +17,174 @@ console.log("Content.js loaded");
 
     console.log("Iframe found.");
 
-    // --------------------------------------------------
-    // Debug all typing events
-    // --------------------------------------------------
+    //------------------------------------------------
+    // Overlay
+    //------------------------------------------------
 
-    const events = [
-        "keydown",
-        "keypress",
-        "keyup",
-        "beforeinput",
-        "input",
-        "compositionstart",
-        "compositionupdate",
-        "compositionend",
-        "textInput",
-        "paste"
-    ];
+    const overlay = document.createElement("div");
 
-    events.forEach(type => {
+    overlay.id = "autocomplete-overlay";
 
-        doc.addEventListener(type, e => {
+    overlay.style.position = "fixed";
+    overlay.style.display = "none";
+    overlay.style.background = "#808080";
+    overlay.style.border = "1px solid #cfcfcf";
+    overlay.style.borderRadius = "6px";
+    overlay.style.padding = "6px";
+    overlay.style.boxShadow = "0 2px 10px rgba(0,0,0,0.2)";
+    overlay.style.fontSize = "14px";
+    overlay.style.fontFamily = "Arial";
+    overlay.style.zIndex = "2147483647";
 
-            console.log(
-                "EVENT:",
-                type,
-                e.constructor.name,
-                e
-            );
+    document.body.appendChild(overlay);
 
-        }, true);
+    let selectedIndex = 0;
+    let currentPredictions = [];
 
-    });
+    //------------------------------------------------
+    // Show Overlay
+    //------------------------------------------------
 
-    // --------------------------------------------------
-    // Ctrl + Space
-    // --------------------------------------------------
+    function showOverlay(predictions, x, y) {
+
+        overlayX = x;
+        overlayY = y;
+
+        currentPredictions = predictions;
+        selectedIndex = 0;
+
+        renderOverlay();
+    }
+
+    //------------------------------------------------
+    // Render Overlay
+    //------------------------------------------------
+
+    function renderOverlay() {
+
+        overlay.innerHTML = "";
+
+        currentPredictions.forEach((text, index) => {
+
+            const div = document.createElement("div");
+
+            div.textContent = text;
+            div.style.padding = "6px 10px";
+            div.style.cursor = "pointer";
+
+            if (index === selectedIndex) {
+                div.style.background = "#2563eb";
+                div.style.color = "white";
+            }
+
+            overlay.appendChild(div);
+        });
+
+        if (currentPredictions.length > 0) {
+            selectedPrediction = currentPredictions[selectedIndex];
+        }
+
+        overlay.style.left = overlayX + "px";
+        overlay.style.top = (overlayY + 20) + "px";
+        overlay.style.display = "block";
+    }
+
+
+    function hideOverlay() {
+
+    overlay.style.display = "none";
+
+    currentPredictions = [];
+
+    selectedIndex = 0;
+
+    }
+
+    //------------------------------------------------
+    // Keyboard
+    //------------------------------------------------
 
     doc.addEventListener("keydown", async function (event) {
+
+        //--------------------------------------------
+        // Overlay Navigation
+        //--------------------------------------------
+
+        if (overlay.style.display === "block") {
+
+            if (event.key === "ArrowDown") {
+
+                event.preventDefault();
+
+                if (currentPredictions.length === 0)
+                    return;
+
+                selectedIndex =
+                    (selectedIndex + 1) %
+                    currentPredictions.length;
+
+                renderOverlay();
+                return;
+            }
+
+            if (event.key === "ArrowUp") {
+
+                event.preventDefault();
+
+                if (currentPredictions.length === 0)
+                    return;
+
+                selectedIndex--;
+
+                if (selectedIndex < 0)
+                    selectedIndex =
+                        currentPredictions.length - 1;
+
+                renderOverlay();
+                return;
+            }
+
+            //----------------------------------------
+            // Accept Prediction
+            //----------------------------------------
+
+            if (event.key === "Tab") {
+
+                 event.preventDefault();
+                 event.stopPropagation();
+                 event.stopImmediatePropagation();
+
+                if (currentPredictions.length === 0)
+                    return;
+
+                const selectedPrediction =
+                    currentPredictions[selectedIndex];
+
+               chrome.runtime.sendMessage({
+                    type: "SELECT",
+                    text: selectedPrediction
+                });
+
+                hideOverlay();
+
+                return;
+
+            }
+
+            if (event.key === "Escape") {
+
+                event.preventDefault();
+
+                hideOverlay();
+
+                return;
+
+            }
+        }
+
+        //--------------------------------------------
+        // Trigger Prediction
+        //--------------------------------------------
 
         if (!(event.ctrlKey && event.code === "Space"))
             return;
@@ -69,10 +204,17 @@ console.log("Content.js loaded");
             return;
         }
 
-        const cursorY = cursor.getBoundingClientRect().top;
+        const rect = cursor.getBoundingClientRect();
+
+        console.log("Cursor Position");
+        console.log("left :", rect.left);
+        console.log("top  :", rect.top);
+        console.log("height :", rect.height);
+
+        const cursorY = rect.top;
 
         //------------------------------------------------
-        // Visible lines
+        // Visible Lines
         //------------------------------------------------
 
         const lines = [...document.querySelectorAll("rect[aria-label]")]
@@ -89,7 +231,7 @@ console.log("Content.js loaded");
         }
 
         //------------------------------------------------
-        // Nearest line
+        // Nearest Line
         //------------------------------------------------
 
         let nearest = lines[0];
@@ -97,27 +239,26 @@ console.log("Content.js loaded");
         for (const line of lines) {
 
             if (
-                Math.abs(line.top - cursorY)
-                <
+                Math.abs(line.top - cursorY) <
                 Math.abs(nearest.top - cursorY)
             ) {
                 nearest = line;
             }
-
         }
 
         //------------------------------------------------
-        // Paragraph
+        // Current Paragraph
         //------------------------------------------------
 
         const paragraph = nearest.rect.parentElement;
 
-        const currentParagraph = [...paragraph.querySelectorAll("rect[aria-label]")]
-            .map(r => r.getAttribute("aria-label"))
-            .join(" ");
+        const currentParagraph =
+            [...paragraph.querySelectorAll("rect[aria-label]")]
+                .map(r => r.getAttribute("aria-label"))
+                .join(" ");
 
         //------------------------------------------------
-        // Previous paragraph
+        // Previous Paragraph
         //------------------------------------------------
 
         let previousParagraph = "";
@@ -127,8 +268,7 @@ console.log("Content.js loaded");
         while (prev) {
 
             if (
-                prev.tagName === "g"
-                &&
+                prev.tagName === "g" &&
                 prev.getAttribute("role") === "paragraph"
             ) {
 
@@ -141,49 +281,47 @@ console.log("Content.js loaded");
             }
 
             prev = prev.previousElementSibling;
-
         }
 
         //------------------------------------------------
-        // Final Context
+        // Context
         //------------------------------------------------
 
-        const context = (
-            previousParagraph +
-            " " +
-            currentParagraph
-        ).trim();
+        const context =
+            (previousParagraph + " " + currentParagraph).trim();
 
         console.log("========== CONTEXT ==========");
         console.log(context);
         console.log("=============================");
 
         //------------------------------------------------
-        // Ask background for prediction
+        // Prediction
         //------------------------------------------------
 
         try {
 
-            const response = await chrome.runtime.sendMessage({
+            const response =
+                await chrome.runtime.sendMessage({
 
-                type: "PREDICT",
+                    type: "PREDICT",
+                    text: context
 
-                text: context
-
-            });
+                });
 
             console.log(response);
 
             if (response.success) {
-            console.log(response.predictions);
 
-            await navigator.clipboard.writeText(
-            response.predictions[0]
-            );
+                console.log(response.predictions);
+
+                showOverlay(
+                    response.predictions,
+                    rect.left,
+                    rect.top
+                );
             }
 
         }
-
         catch (err) {
 
             console.error(err);
@@ -191,5 +329,12 @@ console.log("Content.js loaded");
         }
 
     });
+
+    document.addEventListener("mousedown", () => {
+
+    if (overlay.style.display === "block")
+        hideOverlay();
+
+});
 
 })();
