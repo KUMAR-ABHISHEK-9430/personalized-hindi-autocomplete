@@ -3,6 +3,7 @@ console.log("Content.js loaded");
 let overlayX = 0;
 let overlayY = 0;
 let selectedPrediction = "";
+let autocompleteEnabled = false;
 
 (function () {
 
@@ -99,7 +100,112 @@ let selectedPrediction = "";
     selectedIndex = 0;
 
     }
+    // ******************************
+    // PREDICTION lOGIC
+    // ******************************
 
+    async function requestPrediction() {
+
+    const cursor = document.querySelector(".kix-cursor");
+
+    if (!cursor) {
+        console.log("Cursor not found");
+        return;
+    }
+
+    const rect = cursor.getBoundingClientRect();
+    const cursorY = rect.top;
+
+    const lines = [...document.querySelectorAll("rect[aria-label]")]
+        .map(r => ({
+            rect: r,
+            text: r.getAttribute("aria-label"),
+            top: r.getBoundingClientRect().top
+        }))
+        .sort((a, b) => a.top - b.top);
+
+    if (lines.length === 0)
+        return;
+
+    let nearest = lines[0];
+
+    for (const line of lines) {
+
+        if (
+            Math.abs(line.top - cursorY)
+            <
+            Math.abs(nearest.top - cursorY)
+        ) {
+            nearest = line;
+        }
+
+    }
+
+    const paragraph = nearest.rect.parentElement;
+
+    const currentParagraph =
+        [...paragraph.querySelectorAll("rect[aria-label]")]
+            .map(r => r.getAttribute("aria-label"))
+            .join(" ");
+
+    let previousParagraph = "";
+
+    let prev = paragraph.previousElementSibling;
+
+    while (prev) {
+
+        if (
+            prev.tagName === "g"
+            &&
+            prev.getAttribute("role") === "paragraph"
+        ) {
+
+            previousParagraph =
+                [...prev.querySelectorAll("rect[aria-label]")]
+                    .map(r => r.getAttribute("aria-label"))
+                    .join(" ");
+
+            break;
+        }
+
+        prev = prev.previousElementSibling;
+
+    }
+
+    const context =
+        (previousParagraph + " " + currentParagraph).trim();
+
+    try {
+
+        const response =
+            await chrome.runtime.sendMessage({
+
+                type: "PREDICT",
+
+                text: context
+
+            });
+
+        if (response.success) {
+
+            showOverlay(
+                response.predictions,
+                rect.left,
+                rect.top
+            );
+
+        }
+
+    }
+    catch (err) {
+
+        console.error(err);
+
+    }
+
+    }
+
+    
     //------------------------------------------------
     // Keyboard
     //------------------------------------------------
