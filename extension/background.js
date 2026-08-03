@@ -1,39 +1,56 @@
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
-    if (message.type !== "PREDICT") {
-        return;
+    if (message.type === "PREDICT") {
+
+        fetch("http://127.0.0.1:8000/predict", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                text: message.text,
+            }),
+        })
+            .then((response) => response.json())
+            .then((data) => {
+                sendResponse({
+                    success: true,
+                    predictions: data.predictions,
+                });
+            })
+            .catch((error) => {
+                console.error(error);
+
+                sendResponse({
+                    success: false,
+                    predictions: [],
+                });
+            });
+
+        // Keep the message channel open while fetch() finishes.
+        return true;
     }
 
-    fetch("http://127.0.0.1:8000/predict", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-            text: message.text,
-        }),
-    })
-        .then((response) => response.json())
-        .then((data) => {
+    if (message.type === "SELECT") {
 
-            sendResponse({
-                success: true,
-                predictions: data.predictions,
-            });
-
+        fetch("http://127.0.0.1:8000/select", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                text: message.text,
+            }),
         })
-        .catch((error) => {
-
-            console.error(error);
-
-            sendResponse({
-                success: false,
-                predictions: [],
+            .then(() => {
+                sendResponse({ success: true });
+            })
+            .catch((error) => {
+                console.error(error);
+                sendResponse({ success: false });
             });
 
-        });
-
-    // Keep the message channel open while fetch() finishes.
-    return true;
+        return true;
+    }
 
 });
