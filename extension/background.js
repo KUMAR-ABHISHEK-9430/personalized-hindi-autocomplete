@@ -2,7 +2,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message.type === "PREDICT") {
 
-        fetch("http://127.0.0.1:8000/predict", {
+        fetch("http://127.0.0.1:8000/n_gram", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
