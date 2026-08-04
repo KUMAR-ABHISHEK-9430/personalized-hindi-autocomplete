@@ -6,7 +6,6 @@ let selectedPrediction = "";
 let autocompleteEnabled = false;
 
 (function () {
-
     const iframe = document.querySelector(".docs-texteventtarget-iframe");
 
     if (!iframe) {
@@ -15,17 +14,21 @@ let autocompleteEnabled = false;
     }
 
     const doc = iframe.contentDocument;
-
     console.log("Iframe found.");
+
+    //------------------------------------------------
+    // Timers & Constants for Real-Time Feel
+    //------------------------------------------------
+    let typingTimer = null;
+    let overlayTimer = null;
+    const DEBOUNCE_DELAY = 300; // Wait 400ms after user stops typing to fetch
+    const OVERLAY_DURATION = 5000; // Hide overlay after 2 seconds
 
     //------------------------------------------------
     // Overlay
     //------------------------------------------------
-
     const overlay = document.createElement("div");
-
     overlay.id = "autocomplete-overlay";
-
     overlay.style.position = "fixed";
     overlay.style.display = "none";
     overlay.style.background = "#808080";
@@ -45,30 +48,29 @@ let autocompleteEnabled = false;
     //------------------------------------------------
     // Show Overlay
     //------------------------------------------------
-
     function showOverlay(predictions, x, y) {
-
         overlayX = x;
         overlayY = y;
-
         currentPredictions = predictions;
         selectedIndex = 0;
 
         renderOverlay();
+
+        // 3. Auto-hide logic (Hide after 2 seconds)
+        clearTimeout(overlayTimer);
+        overlayTimer = setTimeout(() => {
+            hideOverlay();
+        }, OVERLAY_DURATION);
     }
 
     //------------------------------------------------
     // Render Overlay
     //------------------------------------------------
-
     function renderOverlay() {
-
         overlay.innerHTML = "";
 
         currentPredictions.forEach((text, index) => {
-
             const div = document.createElement("div");
-
             div.textContent = text;
             div.style.padding = "6px 10px";
             div.style.cursor = "pointer";
@@ -90,219 +92,20 @@ let autocompleteEnabled = false;
         overlay.style.display = "block";
     }
 
-
     function hideOverlay() {
-
-    overlay.style.display = "none";
-
-    currentPredictions = [];
-
-    selectedIndex = 0;
-
+        overlay.style.display = "none";
+        currentPredictions = [];
+        selectedPrediction = "";
+        selectedIndex = 0;
+        
+        // Clear the hide timer if we are hiding it manually
+        clearTimeout(overlayTimer); 
     }
-    // ******************************
-    // PREDICTION lOGIC
-    // ******************************
 
+    // ******************************
+    // PREDICTION LOGIC
+    // ******************************
     async function requestPrediction() {
-
-    const cursor = document.querySelector(".kix-cursor");
-
-    if (!cursor) {
-        console.log("Cursor not found");
-        return;
-    }
-
-    const rect = cursor.getBoundingClientRect();
-    const cursorY = rect.top;
-
-    const lines = [...document.querySelectorAll("rect[aria-label]")]
-        .map(r => ({
-            rect: r,
-            text: r.getAttribute("aria-label"),
-            top: r.getBoundingClientRect().top
-        }))
-        .sort((a, b) => a.top - b.top);
-
-    if (lines.length === 0)
-        return;
-
-    let nearest = lines[0];
-
-    for (const line of lines) {
-
-        if (
-            Math.abs(line.top - cursorY)
-            <
-            Math.abs(nearest.top - cursorY)
-        ) {
-            nearest = line;
-        }
-
-    }
-
-    const paragraph = nearest.rect.parentElement;
-
-    const currentParagraph =
-        [...paragraph.querySelectorAll("rect[aria-label]")]
-            .map(r => r.getAttribute("aria-label"))
-            .join(" ");
-
-    let previousParagraph = "";
-
-    let prev = paragraph.previousElementSibling;
-
-    while (prev) {
-
-        if (
-            prev.tagName === "g"
-            &&
-            prev.getAttribute("role") === "paragraph"
-        ) {
-
-            previousParagraph =
-                [...prev.querySelectorAll("rect[aria-label]")]
-                    .map(r => r.getAttribute("aria-label"))
-                    .join(" ");
-
-            break;
-        }
-
-        prev = prev.previousElementSibling;
-
-    }
-
-    const context =
-        (previousParagraph + " " + currentParagraph).trim();
-
-    try {
-
-        const response =
-            await chrome.runtime.sendMessage({
-
-                type: "PREDICT",
-
-                text: context
-
-            });
-
-        if (response.success) {
-
-            showOverlay(
-                response.predictions,
-                rect.left,
-                rect.top
-            );
-
-        }
-
-    }
-    catch (err) {
-
-        console.error(err);
-
-    }
-
-    }
-
-    
-    //------------------------------------------------
-    // Keyboard
-    //------------------------------------------------
-
-    doc.addEventListener("keydown", async function (event) {
-
-        //--------------------------------------------
-        // Overlay Navigation
-        //--------------------------------------------
-
-        if (overlay.style.display === "block") {
-
-            if (event.key === "ArrowDown") {
-
-                event.preventDefault();
-
-                if (currentPredictions.length === 0)
-                    return;
-
-                selectedIndex =
-                    (selectedIndex + 1) %
-                    currentPredictions.length;
-
-                renderOverlay();
-                return;
-            }
-
-            if (event.key === "ArrowUp") {
-
-                event.preventDefault();
-
-                if (currentPredictions.length === 0)
-                    return;
-
-                selectedIndex--;
-
-                if (selectedIndex < 0)
-                    selectedIndex =
-                        currentPredictions.length - 1;
-
-                renderOverlay();
-                return;
-            }
-
-            //----------------------------------------
-            // Accept Prediction
-            //----------------------------------------
-
-            if (event.key === "Tab") {
-
-                 event.preventDefault();
-                 event.stopPropagation();
-                 event.stopImmediatePropagation();
-
-                if (currentPredictions.length === 0)
-                    return;
-
-                const selectedPrediction =
-                    currentPredictions[selectedIndex];
-
-               chrome.runtime.sendMessage({
-                    type: "SELECT",
-                    text: selectedPrediction
-                });
-
-                hideOverlay();
-
-                return;
-
-            }
-
-            if (event.key === "Escape") {
-
-                event.preventDefault();
-
-                hideOverlay();
-
-                return;
-
-            }
-        }
-
-        //--------------------------------------------
-        // Trigger Prediction
-        //--------------------------------------------
-
-        if (!(event.ctrlKey && event.code === "Space"))
-            return;
-
-        event.preventDefault();
-
-        console.log("Ctrl + Space detected");
-
-        //------------------------------------------------
-        // Cursor
-        //------------------------------------------------
-
         const cursor = document.querySelector(".kix-cursor");
 
         if (!cursor) {
@@ -311,17 +114,7 @@ let autocompleteEnabled = false;
         }
 
         const rect = cursor.getBoundingClientRect();
-
-        console.log("Cursor Position");
-        console.log("left :", rect.left);
-        console.log("top  :", rect.top);
-        console.log("height :", rect.height);
-
         const cursorY = rect.top;
-
-        //------------------------------------------------
-        // Visible Lines
-        //------------------------------------------------
 
         const lines = [...document.querySelectorAll("rect[aria-label]")]
             .map(r => ({
@@ -331,116 +124,156 @@ let autocompleteEnabled = false;
             }))
             .sort((a, b) => a.top - b.top);
 
-        if (lines.length === 0) {
-            console.log("No visible lines");
-            return;
-        }
-
-        //------------------------------------------------
-        // Nearest Line
-        //------------------------------------------------
+        if (lines.length === 0) return;
 
         let nearest = lines[0];
 
         for (const line of lines) {
-
-            if (
-                Math.abs(line.top - cursorY) <
-                Math.abs(nearest.top - cursorY)
-            ) {
+            if (Math.abs(line.top - cursorY) < Math.abs(nearest.top - cursorY)) {
                 nearest = line;
             }
         }
 
-        //------------------------------------------------
-        // Current Paragraph
-        //------------------------------------------------
-
         const paragraph = nearest.rect.parentElement;
-
-        const currentParagraph =
-            [...paragraph.querySelectorAll("rect[aria-label]")]
-                .map(r => r.getAttribute("aria-label"))
-                .join(" ");
-
-        //------------------------------------------------
-        // Previous Paragraph
-        //------------------------------------------------
+        const currentParagraph = [...paragraph.querySelectorAll("rect[aria-label]")]
+            .map(r => r.getAttribute("aria-label"))
+            .join(" ");
 
         let previousParagraph = "";
-
         let prev = paragraph.previousElementSibling;
 
         while (prev) {
-
-            if (
-                prev.tagName === "g" &&
-                prev.getAttribute("role") === "paragraph"
-            ) {
-
-                previousParagraph =
-                    [...prev.querySelectorAll("rect[aria-label]")]
-                        .map(r => r.getAttribute("aria-label"))
-                        .join(" ");
-
+            if (prev.tagName === "g" && prev.getAttribute("role") === "paragraph") {
+                previousParagraph = [...prev.querySelectorAll("rect[aria-label]")]
+                    .map(r => r.getAttribute("aria-label"))
+                    .join(" ");
                 break;
             }
-
             prev = prev.previousElementSibling;
         }
 
-        //------------------------------------------------
-        // Context
-        //------------------------------------------------
-
-        const context =
-            (previousParagraph + " " + currentParagraph).trim();
-
-        console.log("========== CONTEXT ==========");
-        console.log(context);
-        console.log("=============================");
-
-        //------------------------------------------------
-        // Prediction
-        //------------------------------------------------
+        const context = (previousParagraph + " " + currentParagraph).trim();
 
         try {
-
-            const response =
-                await chrome.runtime.sendMessage({
-
-                    type: "PREDICT",
-                    text: context
-
-                });
-
-            console.log(response);
+            console.log("Requesting prediction for context:", context);
+            const response = await chrome.runtime.sendMessage({
+                type: "PREDICT",
+                text: context
+            });
 
             if (response.success) {
-
-                console.log(response.predictions);
-
-                showOverlay(
-                    response.predictions,
-                    rect.left,
-                    rect.top
-                );
+                showOverlay(response.predictions, rect.left, rect.top);
             }
-
-        }
-        catch (err) {
-
+        } catch (err) {
             console.error(err);
-
         }
+    }
 
-    });
+    //------------------------------------------------
+    // Continuous Typing Listener (Real-Time Updates)
+    //------------------------------------------------
+    doc.addEventListener("keyup", function (event) {
+        if (!autocompleteEnabled) return;
 
-    document.addEventListener("mousedown", () => {
+        // Ignore navigation/control keys (we don't want to trigger fetches on them)
+        const ignoredKeys = [
+            "Shift", "Control", "Alt", "Meta", 
+            "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", 
+            "Tab", "Escape", "Enter"
+        ];
+        
+        if (ignoredKeys.includes(event.key)) return;
 
-    if (overlay.style.display === "block")
+        // 1. Immediately hide the stale overlay while the user is typing
         hideOverlay();
 
-});
+        // 2. Clear the previous timer so we don't spam the API on every single keystroke
+        clearTimeout(typingTimer);
+
+        // Set a new timer. If the user pauses for 400ms, fetch the new context!
+        typingTimer = setTimeout(() => {
+            requestPrediction();
+        }, DEBOUNCE_DELAY);
+    });
+
+    //------------------------------------------------
+    // Keyboard Listener (Overrides & Toggles)
+    //------------------------------------------------
+    doc.addEventListener("keydown", async function (event) {
+
+        // Overlay Navigation
+        if (overlay.style.display === "block") {
+            if (event.key === "ArrowDown") {
+                event.preventDefault();
+                if (currentPredictions.length === 0) return;
+                selectedIndex = (selectedIndex + 1) % currentPredictions.length;
+                renderOverlay();
+                return;
+            }
+
+            if (event.key === "ArrowUp") {
+                event.preventDefault();
+                if (currentPredictions.length === 0) return;
+                selectedIndex--;
+                if (selectedIndex < 0) selectedIndex = currentPredictions.length - 1;
+                renderOverlay();
+                return;
+            }
+
+            // Accept Prediction
+            if (event.code === "ControlRight") {
+                console.log("ControlRight intercepted");
+
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation();
+
+                if (currentPredictions.length === 0) return;
+
+                // Stop the typing timer so it doesn't fetch mid-acceptance
+                clearTimeout(typingTimer); 
+
+                chrome.runtime.sendMessage({
+                    type: "SELECT",
+                    text: currentPredictions[selectedIndex]
+                }, () => {
+                    hideOverlay();
+                    if (!autocompleteEnabled) return;
+                    
+                    // Fetch the next prediction immediately after accepting
+                    setTimeout(() => {
+                        requestPrediction();
+                    }, 200);
+                });
+                return;
+            }
+
+            if (event.key === "Escape") {
+                event.preventDefault();
+                hideOverlay();
+                return;
+            }
+        }
+
+        // Trigger Prediction Toggle
+        if (event.ctrlKey && event.code === "Space") {
+            event.preventDefault();
+            autocompleteEnabled = !autocompleteEnabled;
+            console.log("Autocomplete:", autocompleteEnabled);
+
+            if (autocompleteEnabled) {
+                requestPrediction();
+            } else {
+                hideOverlay();
+                clearTimeout(typingTimer);
+            }
+            return;
+        }
+    },true);
+
+    // Hide overlay when clicking outside
+    document.addEventListener("mousedown", () => {
+        if (overlay.style.display === "block") hideOverlay();
+    });
 
 })();
